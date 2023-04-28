@@ -3,8 +3,15 @@
         {
             "type": "command",
             "name": "Compile clox",
+            "workingDir": "build/",
             "program": "make",
         },
-        
+        {
+            "type": "command",
+            "name": "Run clox",
+            "dependsOn": ["Compile clox"],
+            "workingDir": "build/",
+            "program": "./clox",
+        }
     ]
 }
