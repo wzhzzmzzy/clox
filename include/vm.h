@@ -28,12 +28,12 @@ typedef enum {
 void initVM();
 void freeVM();
 /**
- * @brief 将字节码指令装填进 VM，并由 VM 解释执行
+ * @brief 将代码送入编译器，并解释执行
  * 
- * @param chunk 字节码指令数组
+ * @param source 代码文本
  * @return InterpretResult 
  */
-InterpretResult interpret(Chunk* chunk);
+InterpretResult interpret(const char* source);
 void push(Value value);
 Value pop();
 

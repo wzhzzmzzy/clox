@@ -19,7 +19,10 @@
     "chrono": "c",
     "value.h": "c",
     "memory.h": "c",
-    "cstddef": "c"
+    "cstddef": "c",
+    "stdio.h": "c",
+    "compiler.h": "c",
+    "scanner.h": "c"
   },
   "C_Cpp.intelliSenseEngineFallback": "enabled"
 }

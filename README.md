@@ -1,5 +1,7 @@
 # Clox
 
+中文注释 + 笔记
+
 > https://craftinginterpreters.com/chunks-of-bytecode.html
 
 ## How to compile
