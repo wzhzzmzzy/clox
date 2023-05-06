@@ -6,6 +6,11 @@
 
 typedef enum {
   OP_CONSTANT,
+  OP_ADD,
+  OP_SUBTRACT,
+  OP_MULTIPLY,
+  OP_DIVIDE,
+  OP_NEGATE,
   OP_RETURN,
 } OpCode;
 
@@ -21,7 +26,7 @@ typedef struct {
 } Chunk;
 
 /**
- * @brief 初始化动态数组
+ * @brief 初始化动态数组，同时初始化常量数组
  * 
  * @param chunk 数组指针
  */
@@ -33,19 +38,19 @@ void initChunk(Chunk* chunk);
  */
 void freeChunk(Chunk* chunk);
 /**
- * @brief 添加元素到动态数组尾部
+ * @brief 添加字节码到字节码数组尾部
  * 
  * @param chunk 数组指针
- * @param byte 新元素
+ * @param byte 字节码
  * @param line 行号
  */
 void writeChunk(Chunk* chunk, uint8_t byte, int line);
 /**
- * @brief 添加元素到常量动态数组尾部
+ * @brief 添加常量值到常量动态数组尾部
  * 
  * @param chunk Chunk指针
  * @param value 常量值
- * @return int 刚刚添加的常量所在位置
+ * @return int 常量值位于数组的 index
  */
 int addConstant(Chunk* chunk, Value value);
 

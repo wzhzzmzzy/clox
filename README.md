@@ -5,8 +5,13 @@
 ## How to compile
 
 ```sh
-cd build
-cmake ..
-make
-./clox # run
+cd build && cmake .. && make
+./bin/clox # run
 ```
+
+## Notes 
+
+Find it in `/notes`
+
+- [Chaptor 14: Chunks of Bytecode](./notes/chaptor14.md)
+- [Chaptor 14: A Virtual Machine](./notes/chaptor15.md)
