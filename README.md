@@ -14,4 +14,4 @@ cd build && cmake .. && make
 Find it in `/notes`
 
 - [Chaptor 14: Chunks of Bytecode](./notes/chaptor14.md)
-- [Chaptor 14: A Virtual Machine](./notes/chaptor15.md)
+- [Chaptor 15: A Virtual Machine](./notes/chaptor15.md)
