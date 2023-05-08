@@ -1,8 +1,8 @@
-# Clox
+# Clox - 简易字节码虚拟机实现
 
 中文注释 + 笔记
 
-> https://craftinginterpreters.com/chunks-of-bytecode.html
+> https://craftinginterpreters.com/a-bytecode-virtual-machine.html
 
 ## How to compile
 
