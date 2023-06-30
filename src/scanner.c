@@ -4,9 +4,15 @@
 #include "common.h"
 #include "scanner.h"
 
+/**
+ * @brief 双指针扫描器，实时缓存当前扫描状态，用于生成 Token
+ */
 typedef struct {
+  // 当前 Token 的起始位置
   const char* start;
+  // 当前扫描到的位置，扫描完成后会是 Token 的结束位置 +1
   const char* current;
+  // 当前 Token 的行号
   int line;
 } Scanner;
 
@@ -28,6 +34,9 @@ static bool isDigit(char c) {
   return c >= '0' && c <= '9';
 }
 
+/**
+ * @brief 是否已经扫描到了代码结束为止
+ */
 static bool isAtEnd() {
   return *scanner.current == '\0';
 }
@@ -184,7 +193,7 @@ static TokenType identifierType() {
 }
 
 /**
- * @brief 标识符，包括变量名、函数名等
+ * @brief 生成标识符 Token，包括变量名、函数名等
  * @return Token 
  */
 static Token identifier() {
@@ -235,12 +244,16 @@ Token scanToken() {
   skipWhitespace();
   scanner.start = scanner.current;
 
+  // 到头了，EOF
   if (isAtEnd()) return makeToken(TOKEN_EOF);
 
   char c = advance();
+  // 字母开头就是 identifier
   if (isAlpha(c)) return identifier();
+  // 数字开头就是 number
   if (isDigit(c)) return number();
 
+  // 特殊符号情况，按照枚举生成 Token
   switch (c) {
     case '(': return makeToken(TOKEN_LEFT_PAREN);
     case ')': return makeToken(TOKEN_RIGHT_PAREN);

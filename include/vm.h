@@ -28,7 +28,7 @@ typedef enum {
 void initVM();
 void freeVM();
 /**
- * @brief 将代码送入编译器，并解释执行
+ * @brief 解释器执行入口，输入源代码，输出执行完成时状态
  * 
  * @param source 代码文本
  * @return InterpretResult 

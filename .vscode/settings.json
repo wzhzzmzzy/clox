@@ -22,7 +22,8 @@
     "cstddef": "c",
     "stdio.h": "c",
     "compiler.h": "c",
-    "scanner.h": "c"
+    "scanner.h": "c",
+    "vm.h": "c"
   },
   "C_Cpp.intelliSenseEngineFallback": "enabled"
 }
