@@ -23,6 +23,10 @@ typedef struct {
   bool panicMode;
 } Parser;
 
+/**
+ * @brief
+ * Token 的优先级状态
+ */
 typedef enum {
   PREC_NONE,
   PREC_ASSIGNMENT,  // =
@@ -39,6 +43,9 @@ typedef enum {
 
 typedef void (*ParseFn)();
 
+/**
+ * Token 对应的解析规则
+ */
 typedef struct {
   ParseFn prefix;
   ParseFn infix;
@@ -94,7 +101,7 @@ static void errorAtCurrent(const char* message) {
 }
 
 /**
- * @brief 解析下一个 Token
+ * @brief 解析下一个 Token，更新 Parser 状态
  */
 static void advance() {
   parser.previous = parser.current;
@@ -181,6 +188,10 @@ static void expression();
 static ParseRule* getRule(TokenType type);
 static void parsePrecedence(Precedence precedence);
 
+/**
+ * @brief
+ * 编译二元运算符，输出字节码为 `(右侧表达式) (运算符)`，所以是递归执行
+ */
 static void binary() {
   TokenType operatorType = parser.previous.type;
   ParseRule* rule = getRule(operatorType);
@@ -195,6 +206,9 @@ static void binary() {
   }
 }
 
+/**
+ * 
+ */
 static void grouping() {
   expression();
   consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
@@ -265,33 +279,43 @@ ParseRule rules[] = {
 };
 
 /**
- * @brief 按照给定的优先级编译后续的表达式
+ * @brief 按照给定的优先级，从ParseRule表格中获取解析函数，从而编译后续的表达式
  * 
- * @param precedence 
+ * @param precedence Toekn优先级
  */
 static void parsePrecedence(Precedence precedence) {
+  // 更新 Parser 状态到下一个 Token，用于前缀编译
   advance();
+  // 获取前缀编译函数，如果没有前缀编译函数会抛出异常
   ParseFn prefixRule = getRule(parser.previous.type)->prefix;
   if (prefixRule == NULL) {
     error("Expect expression.");
     return;
   }
 
+  // 执行前缀编译
   prefixRule();
 
+  // 在当前优先级范围内，递归执行中缀编译逻辑
   while (precedence <= getRule(parser.current.type)->precedence) {
+    // 更新 Parser 状态到下一个 Token，用于中缀编译
     advance();
+    // 读取中缀解析函数并执行
     ParseFn infixRule = getRule(parser.previous.type)->infix;
     infixRule();
   }
 }
 
+/**
+ * @brief
+ * 按照指定的 Token 获取解析规则
+ */
 static ParseRule* getRule(TokenType type) {
   return &rules[type];
 }
 
 /**
- * @brief 编译当前 Token，可以是任意表达式
+ * @brief 编译当前 Parser 记录的 Token，可以是任意表达式
  */
 static void expression() {
   parsePrecedence(PREC_ASSIGNMENT);

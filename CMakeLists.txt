@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.21.3)
+cmake_minimum_required (VERSION 3.20.0)
 project (lox_vm VERSION 1.0.0)
 
 set(CMAKE_C_STANDARD 11)
