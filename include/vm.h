@@ -2,6 +2,7 @@
 #define clox_vm_h
 
 #include "chunk.h"
+#include "table.h"
 #include "value.h"
 
 #define STACK_MAX 256
@@ -14,6 +15,8 @@ typedef struct {
   uint8_t* ip; // Instruction Pointer，指向当前执行的字节码
   Value stack[STACK_MAX]; // 表达式求值时临时存储在栈内，初始化长度 256
   Value* stackTop; // 当前的栈顶位置
+  Table strings; // string intern
+  Obj* objects;
 } VM;
 
 /**
@@ -24,6 +27,8 @@ typedef enum {
   INTERPRET_COMPILE_ERROR,
   INTERPRET_RUNTIME_ERROR
 } InterpretResult;
+
+extern VM vm;
 
 void initVM();
 void freeVM();
