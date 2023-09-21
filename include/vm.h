@@ -15,6 +15,7 @@ typedef struct {
   uint8_t* ip; // Instruction Pointer，指向当前执行的字节码
   Value stack[STACK_MAX]; // 表达式求值时临时存储在栈内，初始化长度 256
   Value* stackTop; // 当前的栈顶位置
+  Table globals; // 常量集合
   Table strings; // string intern
   Obj* objects;
 } VM;
