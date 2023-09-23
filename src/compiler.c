@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "common.h"
 #include "compiler.h"
 #include "scanner.h"
@@ -52,7 +53,22 @@ typedef struct {
   Precedence precedence; // 优先级
 } ParseRule;
 
+typedef struct {
+  Token name;
+  int depth;
+} Local;
+
+/**
+ * 编译器实例，其中缓存了编译器状态数据
+ */
+typedef struct {
+  Local locals[UINT8_COUNT]; // 局部变量缓存
+  int localCount; // 当前局部变量的数量，也就是当前变量的索引
+  int scopeDepth; // 当前作用域深度
+} Compiler;
+
 Parser parser;
+Compiler* current = NULL;
 Chunk* compilingChunk;
 
 static Chunk* currentChunk() {
@@ -166,7 +182,7 @@ static void emitReturn() {
 }
 
 /**
- * 将一个值作为常量添加到常量列表，返回其索引
+ * @brief 将一个值作为常量添加到常量列表，返回其索引
  * 
  * @param value 常量值
  * 
@@ -189,6 +205,12 @@ static void emitConstant(Value value) {
   emitBytes(OP_CONSTANT, makeConstant(value));
 }
 
+static void initCompiler(Compiler* compiler) {
+  compiler->localCount = 0;
+  compiler->scopeDepth = 0;
+  current = compiler;
+}
+
 /**
  * @brief 结束编译流程
  */
@@ -200,6 +222,32 @@ static void endCompiler() {
   }
 #endif
 }
+
+/**
+ * 创建一个 block 的时候，作用域深度 ++
+ */
+static void beginScope() {
+  current->scopeDepth++;
+}
+
+/**
+ * 退出一个 block
+ */
+static void endScope() {
+  // 作用域深度 --
+  current->scopeDepth--;
+
+  // 更新作用域深度后，POP 所有的局部变量
+  while (
+    current->localCount > 0 && 
+    current->locals[current->localCount - 1].depth >
+    current->scopeDepth
+  ) {
+    emitByte(OP_POP);
+    current->localCount--;
+  }
+}
+
 
 static void expression();
 static void statement();
@@ -218,13 +266,104 @@ static uint8_t identifierConstant(Token* name) {
   return makeConstant(OBJ_VAL(copyString(name->start, name->length)));
 }
 
+/**
+ * 对比变量名是否相同 
+ */
+static bool identifiersEqual(Token* a, Token* b) {
+  if (a->length != b->length) return false;
+  return memcmp(a->start, b->start, a->length) == 0;
+}
 
+/**
+ * 遍历当前编译器的局部变量缓存，找到同名即可
+ */
+static int resolveLocal(Compiler* compiler, Token* name) {
+  for (int i = compiler->localCount - 1; i >= 0; i--) {
+    Local* local = &compiler->locals[i];
+    if (identifiersEqual(name, &local->name)) {
+      if (local->depth == -1) {
+        error("Can't read local variable in its own initializer.");
+      }
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * 添加一个局部变量到缓存当中
+ */
+static void addLocal(Token name) {
+  if (current->localCount == UINT8_COUNT) {
+    error("Too many local variables in function.");
+    return;
+  }
+
+  Local* local = &current->locals[current->localCount++];
+  local->name = name;
+  local->depth = -1; // 初始化时，局部变量的深度为 -1
+}
+
+/**
+ * 将局部变量名添加到编译器的缓存中
+ */
+static void declareVariable() {
+  if (current->scopeDepth == 0) return;
+
+  Token* name = &parser.previous;
+  // 遍历所有局部变量，识别当前作用域内有没有同名变量
+  for (int i = current->localCount - 1; i >= 0; i--) {
+    Local* local = &current->locals[i];
+    if (local->depth != -1 && local->depth < current->scopeDepth) {
+      break; 
+    }
+
+    if (identifiersEqual(name, &local->name)) {
+      error("Already a variable with this name in this scope.");
+    }
+  }
+
+  addLocal(*name);
+}
+
+/**
+ * @brief 解析变量名，如果是局部变量，则同时添加到编译器缓存内
+ * 
+ * @param errorMessage 没有解析到 TOKEN_IDENTIFIER 时输出的异常信息
+ * @return 返回变量名的常量索引
+ */
 static uint8_t parseVariable(const char* errorMessage) {
   consume(TOKEN_IDENTIFIER, errorMessage);
+
+  declareVariable();
+  // 如果是局部变量，不需要返回变量名的常量索引，所以返回 0
+  if (current->scopeDepth > 0) return 0;
+
   return identifierConstant(&parser.previous);
 }
 
+/**
+ * 标记局部变量为已初始化：
+ * 将当前局部变量的深度与当前作用域深度同步
+ */
+static void markInitialized() {
+  current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
+/**
+ * @brief
+ * 局部变量：标记为已初始化完成
+ * 全局变量：添加一个 OP_DEFINE_GLOBAL global 到字节码中
+ * 
+ * @param global 全局变量名的常量索引
+ */
 static void defineVariable(uint8_t global) {
+  if (current->scopeDepth > 0) {
+    markInitialized();
+    return;
+  }
+
   emitBytes(OP_DEFINE_GLOBAL, global);
 }
 
@@ -289,13 +428,22 @@ static void string(bool canAssign) {
 }
 
 static void namedVariable(Token name, bool canAssign) {
-  uint8_t arg = identifierConstant(&name);
+  uint8_t getOp, setOp;
+  int arg = resolveLocal(current, &name);
+  if (arg != -1) {
+    getOp = OP_GET_LOCAL;
+    setOp = OP_SET_LOCAL;
+  } else {
+    arg = identifierConstant(&name);
+    getOp = OP_GET_GLOBAL;
+    setOp = OP_SET_GLOBAL;
+  }
   
   if (canAssign && match(TOKEN_EQUAL)) {
     expression();
-    emitBytes(OP_SET_GLOBAL, arg);
+    emitBytes(setOp, (uint8_t)arg);
   } else {
-    emitBytes(OP_GET_GLOBAL, arg);
+    emitBytes(getOp, (uint8_t)arg);
   }
 }
 
@@ -411,6 +559,14 @@ static void expression() {
   parsePrecedence(PREC_ASSIGNMENT);
 }
 
+static void block() {
+  while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
+    declaration();
+  }
+
+  consume(TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
 static void varDeclaration() {
   uint8_t global = parseVariable("Expect variable name.");
 
@@ -473,6 +629,10 @@ static void declaration() {
 static void statement() {
   if (match(TOKEN_PRINT)) {
     printStatement();
+  } else if (match(TOKEN_LEFT_BRACE)) {
+    beginScope();
+    block();
+    endScope();
   } else {
     expressionStatement();
   }
@@ -481,6 +641,8 @@ static void statement() {
 bool compile(const char* source, Chunk* chunk) {
   // 初始化全局变量
   initScanner(source);
+  Compiler compiler;
+  initCompiler(&compiler);
   compilingChunk = chunk;
 
   parser.hadError = false;
