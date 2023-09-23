@@ -1,0 +1,20 @@
+var condition = true;
+if (condition) {
+    print condition;
+} else {
+    print !condition;
+}
+
+var code = 3;
+
+var i = 0;
+while (i < code) {
+    print "while loop:";
+    print i;
+    i = i + 1;
+}
+
+for (var i = 0; i < code; i = i + 1) {
+    print "for loop:";
+    print i;
+}

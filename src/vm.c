@@ -103,6 +103,8 @@ static void concatenate() {
 static InterpretResult run() {
 #define READ_BYTE() (*vm.ip++) // 读取下一个字节码指令
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()]) // 以下一个字节为索引读取常量
+#define READ_SHORT() \ 
+    (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1])) // 读取下两个字节码指令，作为 short 返回
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 // 执行 C 内置的二元运算符
 #define BINARY_OP(valueType, op) \
@@ -213,6 +215,21 @@ static InterpretResult run() {
         printf("\n");
         break;
       }
+      case OP_JUMP: {
+        uint16_t offset = READ_SHORT();
+        vm.ip += offset;
+        break;
+      }
+      case OP_JUMP_IF_FALSE: {
+        uint16_t offset = READ_SHORT();
+        if (isFalsey(peek(0))) vm.ip += offset;
+        break;
+      }
+      case OP_LOOP: {
+        uint16_t offset = READ_SHORT();
+        vm.ip -= offset;
+        break;
+      }
       case OP_RETURN: {
         // Exit interpreter.
         return INTERPRET_OK;
@@ -221,6 +238,7 @@ static InterpretResult run() {
   }
 
 #undef READ_BYTE
+#undef READ_SHORT
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef BINARY_OP
