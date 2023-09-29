@@ -1,18 +1,30 @@
 #ifndef clox_vm_h
 #define clox_vm_h
 
-#include "chunk.h"
+#include "object.h"
 #include "table.h"
 #include "value.h"
 
-#define STACK_MAX 256
+#define FRAMES_MAX 64
+#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
+
+/**
+ * @brief 用于跟踪当前调用状态的结构体
+ * 
+ */
+typedef struct {
+  ObjFunction* function; // 调用的函数
+  uint8_t* ip; // 当前正在执行语句的 IP
+  Value* slots; // 指向第一个局部变量槽位
+} CallFrame;
 
 /**
  * @brief VM 结构体
  */
 typedef struct {
-  Chunk* chunk; // 字节码内容
-  uint8_t* ip; // Instruction Pointer，指向当前执行的字节码
+  CallFrame frames[FRAMES_MAX];
+  int frameCount;
+
   Value stack[STACK_MAX]; // 表达式求值时临时存储在栈内，初始化长度 256
   Value* stackTop; // 当前的栈顶位置
   Table globals; // 常量集合

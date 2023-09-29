@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "common.h"
 #include "compiler.h"
@@ -11,11 +12,16 @@
 
 VM vm; 
 
+static Value clockNative(int argCount, Value* args) {
+  return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+}
+
 /**
  * @brief 初始化临时存放表达式值的栈
  */
 static void resetStack() {
   vm.stackTop = vm.stack;
+  vm.frameCount = 0;
 }
 
 /**
@@ -28,10 +34,27 @@ static void runtimeError(const char* format, ...) {
   va_end(args);
   fputs("\n", stderr);
 
-  size_t instruction = vm.ip - vm.chunk->code - 1;
-  int line = vm.chunk->lines[instruction];
-  fprintf(stderr, "[line %d] in script\n", line);
+  for (int i = vm.frameCount - 1; i >= 0; i--) {
+    CallFrame* frame = &vm.frames[i];
+    ObjFunction* function = frame->function;
+    size_t instruction = frame->ip - function->chunk.code - 1;
+    fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
+    if (function->name == NULL) {
+      fprintf(stderr, "script\n");
+    } else {
+      fprintf(stderr, "%s()\n", function->name->chars);
+    }
+  }
+
   resetStack();
+}
+
+static void defineNative(const char* name, NativeFn function) {
+  push(OBJ_VAL(copyString(name, (int)strlen(name))));
+  push(OBJ_VAL(newNative(function)));
+  tableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+  pop();
+  pop();
 }
 
 void initVM() {
@@ -39,6 +62,8 @@ void initVM() {
   vm.objects = NULL;
   initTable(&vm.globals);
   initTable(&vm.strings);
+  
+  defineNative("clock", clockNative);
 }
 
 void freeVM() {
@@ -68,10 +93,66 @@ Value pop() {
 }
 
 /**
- * @brief 读当前栈顶的值，并不 pop
+ * @brief 读当前求值栈顶的值，并不 pop
+ * 
+ * @param distance 距离栈顶的偏移量
  */
 static Value peek(int distance) {
   return vm.stackTop[-1 - distance];
+}
+
+/**
+ * @brief 调用函数，调用成功的话返回 true
+ * 
+ * @param function 需要调用的函数指针
+ * @param argCount 参数列表长度
+ * @return true 调用成功
+ * @return false 调用失败
+ */
+static bool call(ObjFunction* function, int argCount) {
+  if (argCount != function->arity) {
+    runtimeError("Expected %d arguments but got %d.", function->arity, argCount);
+    return false;
+  }
+
+  if (vm.frameCount == FRAMES_MAX) {
+    runtimeError("Stack overflow.");
+    return false;
+  }
+
+  CallFrame* frame = &vm.frames[vm.frameCount++];
+  frame->function = function;
+  frame->ip = function->chunk.code;
+  frame->slots = vm.stackTop - argCount - 1;
+  return true;
+}
+
+/**
+ * @brief 先做类型检查，再调用函数
+ * 
+ * @param callee 被调用的值
+ * @param argCount 参数数量
+ * @return true 调用成功
+ * @return false 调用失败
+ */
+static bool callValue(Value callee, int argCount) {
+  if (IS_OBJ(callee)) {
+    switch (OBJ_TYPE(callee)) {
+      case OBJ_FUNCTION: 
+        return call(AS_FUNCTION(callee), argCount);
+      case OBJ_NATIVE: {
+        NativeFn native = AS_NATIVE(callee);
+        Value result = native(argCount, vm.stackTop - argCount);
+        vm.stackTop -= argCount + 1;
+        push(result);
+        return true;
+      }
+      default:
+        break; // Non-callable object type.
+    }
+  }
+  runtimeError("Can only call functions and classes.");
+  return false;
 }
 
 /**
@@ -101,10 +182,12 @@ static void concatenate() {
  * @return InterpretResult 
  */
 static InterpretResult run() {
-#define READ_BYTE() (*vm.ip++) // 读取下一个字节码指令
-#define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()]) // 以下一个字节为索引读取常量
-#define READ_SHORT() \ 
-    (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1])) // 读取下两个字节码指令，作为 short 返回
+  CallFrame* frame = &vm.frames[vm.frameCount - 1];
+#define READ_BYTE() (*frame->ip++) // 读取下一个字节码指令
+#define READ_SHORT() \
+    (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1])) // 读取下两个字节码指令，作为 short 返回
+#define READ_CONSTANT() \
+    (frame->function->chunk.constants.values[READ_BYTE()]) // 读取当前 Chunk 的下一个字节索引的常量
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 // 执行 C 内置的二元运算符
 #define BINARY_OP(valueType, op) \
@@ -127,7 +210,7 @@ static InterpretResult run() {
       printf(" ]");
     }
     printf("\n");
-    disassembleInstruction(vm.chunk, (int)(vm.ip - vm.chunk->code));
+    disassembleInstruction(&frame->function->chunk, (int)(frame->ip - frame->function->chunk.code));
 #endif
     uint8_t instruction;
     switch (instruction = READ_BYTE()) {
@@ -142,12 +225,12 @@ static InterpretResult run() {
       case OP_POP:      pop(); break;
       case OP_GET_LOCAL: {
         uint8_t slot = READ_BYTE();
-        push(vm.stack[slot]); 
+        push(frame->slots[slot]); 
         break;
       }
       case OP_SET_LOCAL: {
         uint8_t slot = READ_BYTE();
-        vm.stack[slot] = peek(0);
+        frame->slots[slot] = peek(0);
         break;
       }
       case OP_GET_GLOBAL: {
@@ -217,22 +300,41 @@ static InterpretResult run() {
       }
       case OP_JUMP: {
         uint16_t offset = READ_SHORT();
-        vm.ip += offset;
+        frame->ip += offset;
         break;
       }
       case OP_JUMP_IF_FALSE: {
         uint16_t offset = READ_SHORT();
-        if (isFalsey(peek(0))) vm.ip += offset;
+        if (isFalsey(peek(0))) frame->ip += offset;
         break;
       }
       case OP_LOOP: {
         uint16_t offset = READ_SHORT();
-        vm.ip -= offset;
+        frame->ip -= offset;
+        break;
+      }
+      case OP_CALL: {
+        int argCount = READ_BYTE();
+        if (!callValue(peek(argCount), argCount)) {
+          return INTERPRET_RUNTIME_ERROR;
+        }
+        frame = &vm.frames[vm.frameCount - 1];
         break;
       }
       case OP_RETURN: {
-        // Exit interpreter.
-        return INTERPRET_OK;
+        Value result = pop();
+        vm.frameCount--;
+        // 此时整个脚本已经执行结束，pop 掉全局函数这个临时变量
+        if (vm.frameCount == 0) {
+          pop();
+          return INTERPRET_OK;
+        }
+
+        // 将求值栈顶和 CallFrame 的栈顶同步，这样可以清理掉参数列表
+        vm.stackTop = frame->slots;
+        push(result);
+        frame = &vm.frames[vm.frameCount - 1];
+        break;
       }
     }
   }
@@ -245,19 +347,11 @@ static InterpretResult run() {
 }
 
 InterpretResult interpret(const char* source) {
-  Chunk chunk;
-  initChunk(&chunk);
+  ObjFunction* function = compile(source);
+  if (function == NULL) return INTERPRET_COMPILE_ERROR;
 
-  if (!compile(source, &chunk)) {
-    freeChunk(&chunk);
-    return INTERPRET_COMPILE_ERROR;
-  }
+  push(OBJ_VAL(function));
+  call(function, 0);
 
-  vm.chunk = &chunk;
-  vm.ip = vm.chunk->code;
-
-  InterpretResult result = run();
-
-  freeChunk(&chunk);
-  return result;
+  return run();
 }
