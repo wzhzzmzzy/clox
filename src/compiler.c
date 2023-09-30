@@ -56,7 +56,13 @@ typedef struct {
 typedef struct {
   Token name;
   int depth;
+  bool isCaptured;
 } Local;
+
+typedef struct {
+  uint8_t index;
+  bool isLocal;
+} Upvalue;
 
 typedef enum {
   TYPE_FUNCTION,
@@ -66,14 +72,15 @@ typedef enum {
 /**
  * 编译器实例，其中缓存了编译器状态数据
  */
-typedef struct {
+typedef struct Compiler {
   struct Compiler* enclosing;
   ObjFunction* function;
   FunctionType type;
 
   Local locals[UINT8_COUNT]; // 局部变量缓存
   int localCount; // 当前局部变量的数量，也就是当前变量的索引
-  int scopeDepth; // 当前作用域深度
+  Upvalue upvalues[UINT8_COUNT];
+  int scopeDepth; // 当前作用域深度  
 } Compiler;
 
 Parser parser;
@@ -287,6 +294,7 @@ static void initCompiler(Compiler* compiler, FunctionType type) {
   
   Local* local = &current->locals[current->localCount++];
   local->depth = 0;
+  local->isCaptured = false;
   local->name.start = "";
   local->name.length = 0;
 }
@@ -332,7 +340,11 @@ static void endScope() {
     current->locals[current->localCount - 1].depth >
     current->scopeDepth
   ) {
-    emitByte(OP_POP);
+    if (current->locals[current->localCount - 1].isCaptured) {
+      emitByte(OP_CLOSE_UPVALUE);
+    } else {
+      emitByte(OP_POP);
+    }
     current->localCount--;
   }
 }
@@ -364,7 +376,9 @@ static bool identifiersEqual(Token* a, Token* b) {
 }
 
 /**
- * 遍历当前编译器的局部变量缓存，找到同名即可
+ * @brief 遍历当前编译器的局部变量缓存，找到同名变量
+ * 
+ * @return int 局部变量的下标
  */
 static int resolveLocal(Compiler* compiler, Token* name) {
   for (int i = compiler->localCount - 1; i >= 0; i--) {
@@ -375,6 +389,64 @@ static int resolveLocal(Compiler* compiler, Token* name) {
       }
       return i;
     }
+  }
+
+  return -1;
+}
+
+/**
+ * @brief 添加上层 compiler 的局部变量到当前 compiler 的 upvalue 中
+ * 
+ * @param compiler 当前闭包的 compiler
+ * @param index 需要提升的上层 compiler 的局部变量下标
+ * @param isLocal 该 upvalue 指向的是 local 还是 upvalue
+ * @return int 当前 upvalue 的下标
+ */
+static int addUpvalue(Compiler* compiler, uint8_t index, bool isLocal) {
+  int upvalueCount = compiler->function->upvalueCount;
+  Upvalue upvalues[UINT8_COUNT];
+
+  // 避免重复添加相同的 upvalue
+  for (int i = 0; i < upvalueCount; i++) {
+    Upvalue* upvalue = &compiler->upvalues[i];
+    if (upvalue->index == index && upvalue->isLocal == isLocal) {
+      return i;
+    }
+  }
+  
+  if (upvalueCount == UINT8_COUNT) {
+    error("Too many closure variables in function.");
+    return 0;
+  }
+
+  compiler->upvalues[upvalueCount].isLocal = isLocal;
+  compiler->upvalues[upvalueCount].index = index;
+  return compiler->function->upvalueCount++;
+}
+
+
+/**
+ * @brief 
+ * 搜索当前 compiler 的上层 enclosing 的 local 和 upvalue，
+ * 寻找是否存在同名局部变量；
+ * 如果找到了，则创建一个指向它的 upvalue
+ * 
+ * @param compiler 
+ * @param name 
+ * @return int 
+ */
+static int resolveUpvalue(Compiler* compiler, Token* name) {
+  if (compiler->enclosing == NULL) return -1;
+
+  int local = resolveLocal(compiler->enclosing, name);
+  if (local != -1) {
+    compiler->enclosing->locals[local].isCaptured = true;
+    return addUpvalue(compiler, (uint8_t)local, true);
+  }
+
+  int upvalue = resolveUpvalue(compiler->enclosing, name);
+  if (upvalue != -1) {
+    return addUpvalue(compiler, (uint8_t)upvalue, false);
   }
 
   return -1;
@@ -392,6 +464,7 @@ static void addLocal(Token name) {
   Local* local = &current->locals[current->localCount++];
   local->name = name;
   local->depth = -1; // 初始化时，局部变量的深度为 -1
+  local->isCaptured = false;
 }
 
 /**
@@ -571,6 +644,9 @@ static void namedVariable(Token name, bool canAssign) {
   if (arg != -1) {
     getOp = OP_GET_LOCAL;
     setOp = OP_SET_LOCAL;
+  } else if ((arg = resolveUpvalue(current, &name)) != -1) {
+    getOp = OP_GET_UPVALUE;
+    setOp = OP_SET_UPVALUE;
   } else {
     arg = identifierConstant(&name);
     getOp = OP_GET_GLOBAL;
@@ -708,7 +784,7 @@ static void block() {
 static void function(FunctionType type) {
   Compiler compiler;
   initCompiler(&compiler, type);
-  beginScope(); 
+  beginScope();
 
   consume(TOKEN_LEFT_PAREN, "Expect '(' after function name.");
   // 解析函数的参数列表
@@ -727,7 +803,12 @@ static void function(FunctionType type) {
   block();
 
   ObjFunction* function = endCompiler();
-  emitBytes(OP_CONSTANT, makeConstant(OBJ_VAL(function)));
+  emitBytes(OP_CLOSURE, makeConstant(OBJ_VAL(function)));
+
+  for (int i = 0; i < function->upvalueCount; i++) {
+    emitByte(compiler.upvalues[i].isLocal ? 1 : 0);
+    emitByte(compiler.upvalues[i].index);
+  }
 }
 
 static void funDeclaration() {

@@ -13,7 +13,7 @@
  * 
  */
 typedef struct {
-  ObjFunction* function; // 调用的函数
+  ObjClosure* closure; // 调用的闭包
   uint8_t* ip; // 当前正在执行语句的 IP
   Value* slots; // 指向第一个局部变量槽位
 } CallFrame;
@@ -29,6 +29,7 @@ typedef struct {
   Value* stackTop; // 当前的栈顶位置
   Table globals; // 常量集合
   Table strings; // string intern
+  ObjUpvalue* openUpvalues;
   Obj* objects;
 } VM;
 

@@ -63,7 +63,7 @@ static void runFile(const char* path) {
 int main(int argc, const char* argv[]) {
   initVM();
 
-  runFile("../../tests/fib.lox");
+  runFile("../../tests/closure.lox");
 
   // if (argc == 1) {
   //   repl();
