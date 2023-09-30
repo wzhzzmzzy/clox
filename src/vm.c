@@ -156,7 +156,17 @@ static bool callValue(Value callee, int argCount) {
   return false;
 }
 
+/**
+ * @brief 
+ * 检查 vm.openUpvalues 是否已有当前 local,
+ * 若无捕获局部变量 local, 将其迁移到 heap, 
+ * 并添加到 vm.openUpvalues 这个降序链表的合适位置
+ * 
+ * @param local 
+ * @return ObjUpvalue* 
+ */
 static ObjUpvalue* captureUpvalue(Value* local) {
+  // 尽量复用已有的 upvalue
   ObjUpvalue* prevUpvalue = NULL;
   ObjUpvalue* upvalue = vm.openUpvalues;
   while (upvalue != NULL && upvalue->location > local) {
@@ -168,6 +178,7 @@ static ObjUpvalue* captureUpvalue(Value* local) {
     return upvalue;
   }
 
+  // 创建新的 upvalue, 依序添加进链表
   ObjUpvalue* createdUpvalue = newUpvalue(local);
   createdUpvalue->next = upvalue;
 
@@ -180,9 +191,15 @@ static ObjUpvalue* captureUpvalue(Value* local) {
   return createdUpvalue;
 }
 
+/**
+ * @brief 
+ * 将 last 位置和之前的所有 upvalue 标记为 closed，
+ * 使用 upvalue->closed 指向原先的 local 数据
+ * 
+ * @param last 
+ */
 static void closeUpvalues(Value* last) {
-  while (vm.openUpvalues != NULL &&
-         vm.openUpvalues->location >= last) {
+  while (vm.openUpvalues != NULL && vm.openUpvalues->location >= last) {
     ObjUpvalue* upvalue = vm.openUpvalues;
     upvalue->closed = *upvalue->location;
     upvalue->location = &upvalue->closed;
@@ -373,6 +390,7 @@ static InterpretResult run() {
         ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
         ObjClosure* closure = newClosure(function);
         push(OBJ_VAL(closure));
+        // 创建闭包中所有 upvalue 的引用
         for (int i = 0; i < closure->upvalueCount; i++) {
           uint8_t isLocal = READ_BYTE();
           uint8_t index = READ_BYTE();

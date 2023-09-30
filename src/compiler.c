@@ -378,7 +378,7 @@ static bool identifiersEqual(Token* a, Token* b) {
 /**
  * @brief 遍历当前编译器的局部变量缓存，找到同名变量
  * 
- * @return int 局部变量的下标
+ * @return int 局部变量的下标, 未找到则返回 -1
  */
 static int resolveLocal(Compiler* compiler, Token* name) {
   for (int i = compiler->localCount - 1; i >= 0; i--) {
@@ -427,7 +427,7 @@ static int addUpvalue(Compiler* compiler, uint8_t index, bool isLocal) {
 
 /**
  * @brief 
- * 搜索当前 compiler 的上层 enclosing 的 local 和 upvalue，
+ * 递归搜索当前 compiler 的上层 enclosing 的 local 和 upvalue，
  * 寻找是否存在同名局部变量；
  * 如果找到了，则创建一个指向它的 upvalue
  * 
@@ -444,6 +444,7 @@ static int resolveUpvalue(Compiler* compiler, Token* name) {
     return addUpvalue(compiler, (uint8_t)local, true);
   }
 
+  // 此处会递归向上层搜索，为上层补完 upvalue
   int upvalue = resolveUpvalue(compiler->enclosing, name);
   if (upvalue != -1) {
     return addUpvalue(compiler, (uint8_t)upvalue, false);
