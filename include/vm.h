@@ -30,7 +30,14 @@ typedef struct {
   Table globals; // 常量集合
   Table strings; // string intern
   ObjUpvalue* openUpvalues; // 所有 upvalue 集合，保证复用
+  
+  size_t bytesAllocated;
+  size_t nextGC;
   Obj* objects;
+  // 用于存储 GC 对象的灰色栈
+  int grayCount;
+  int grayCapacity;
+  Obj** grayStack;
 } VM;
 
 /**

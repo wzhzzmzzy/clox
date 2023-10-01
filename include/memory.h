@@ -31,7 +31,14 @@
  * @return realloc 返回的 void* 指针
  */
 void* reallocate(void* pointer, size_t oldSize, size_t newSize);
-
+void markObject(Obj* object);
+/**
+ * @brief 将当前 Value 标记为正在被引用
+ * 
+ * @param value 
+ */
+void markValue(Value value);
+void collectGarbage();
 /**
  * @brief
  * 释放 VM 中所有的 Obj 对象内存

@@ -72,4 +72,16 @@ void tableAddAll(Table* from, Table* to);
  */
 ObjString* tableFindString(Table* table, const char* chars, int length, uint32_t hash);
 
+/**
+ * @brief 清理 string set 中的弱引用条目
+ * 
+ * @param table 
+ */
+void tableRemoveWhite(Table* table);
+/**
+ * @brief 标记 Table 中所有引用到的 K-V 对
+ * 
+ * @param table 
+ */
+void markTable(Table* table);
 #endif
