@@ -29,6 +29,7 @@ typedef struct {
   Value* stackTop; // 当前的栈顶位置
   Table globals; // 常量集合
   Table strings; // string intern
+  ObjString* initString;
   ObjUpvalue* openUpvalues; // 所有 upvalue 集合，保证复用
   
   size_t bytesAllocated;
